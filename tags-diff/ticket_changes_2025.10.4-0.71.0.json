@@ -1,0 +1,138 @@
+{
+  "metadata": {
+    "generated_at": "2025-10-27T23:00:33.890228",
+    "total_services": 13,
+    "processed": 3,
+    "skipped": 8,
+    "failed": 1,
+    "total_unique_tickets": 17
+  },
+  "services": [
+    {
+      "service": "ui",
+      "repository": "https://github.com/appcd-dev/appcd-ui",
+      "repo_path": "appcd-dev/appcd-ui",
+      "version_key": "APPCDUI_VERSION",
+      "current_tag": "v0.20.0",
+      "new_tag": "v0.20.1",
+      "status": "success",
+      "tickets": [
+        "AE-222"
+      ],
+      "ticket_count": 1,
+      "error": null
+    },
+    {
+      "service": "appcd",
+      "repository": "https://github.com/appcd-dev/appcd",
+      "repo_path": "appcd-dev/appcd",
+      "version_key": "APPCD_VERSION",
+      "current_tag": "v2025.10.4",
+      "new_tag": "v0.71.0",
+      "status": "error",
+      "tickets": [],
+      "ticket_count": 0,
+      "error": "Failed to fetch commits or no commits found"
+    },
+    {
+      "service": "iac-gen",
+      "repository": "https://github.com/appcd-dev/iac-gen",
+      "repo_path": "appcd-dev/iac-gen",
+      "version_key": "IACGEN_VERSION",
+      "current_tag": "v0.58.1",
+      "new_tag": "v0.59.0",
+      "status": "success",
+      "tickets": [
+        "AE-1238",
+        "AE-1252",
+        "AE-1261",
+        "AE-1267",
+        "AE-1272",
+        "CLOUD-1228",
+        "CLOUD-1239",
+        "CLOUD-1258",
+        "CLOUD-1268",
+        "CLOUD-1275",
+        "DPP-468"
+      ],
+      "ticket_count": 11,
+      "error": null
+    },
+    {
+      "service": "exporter",
+      "repository": "https://github.com/appcd-dev/stack-exporter",
+      "repo_path": "appcd-dev/stack-exporter",
+      "version_key": "STACK_EXPORTER_VERSION",
+      "current_tag": "v0.9.12",
+      "new_tag": "v0.10.2",
+      "status": "success",
+      "tickets": [
+        "PLAT-1027",
+        "PLAT-1174",
+        "PLAT-1209",
+        "PLAT-1212",
+        "PLAT-1237"
+      ],
+      "ticket_count": 5,
+      "error": null
+    },
+    {
+      "service": "backstage-adapter",
+      "repository": "https://github.com/appcd-dev/backstage-adapter",
+      "repo_path": "appcd-dev/backstage-adapter",
+      "version_key": "BACKSTAGE_ADAPTER_VERSION",
+      "current_tag": "",
+      "new_tag": "main",
+      "status": "new_service",
+      "tickets": [],
+      "ticket_count": 0,
+      "error": null
+    }
+  ],
+  "all_tickets": [
+    "AE-1238",
+    "AE-1252",
+    "AE-1261",
+    "AE-1267",
+    "AE-1272",
+    "AE-222",
+    "CLOUD-1228",
+    "CLOUD-1239",
+    "CLOUD-1258",
+    "CLOUD-1268",
+    "CLOUD-1275",
+    "DPP-468",
+    "PLAT-1027",
+    "PLAT-1174",
+    "PLAT-1209",
+    "PLAT-1212",
+    "PLAT-1237"
+  ],
+  "tickets_by_project": {
+    "AE": [
+      "AE-1238",
+      "AE-1252",
+      "AE-1261",
+      "AE-1267",
+      "AE-1272",
+      "AE-222"
+    ],
+    "CLOUD": [
+      "CLOUD-1228",
+      "CLOUD-1239",
+      "CLOUD-1258",
+      "CLOUD-1268",
+      "CLOUD-1275"
+    ],
+    "DPP": [
+      "DPP-468"
+    ],
+    "PLAT": [
+      "PLAT-1027",
+      "PLAT-1174",
+      "PLAT-1209",
+      "PLAT-1212",
+      "PLAT-1237"
+    ]
+  }
+}

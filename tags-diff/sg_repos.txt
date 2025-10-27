@@ -1,0 +1,16 @@
+# Example repository and tag combinations
+# Format: owner/repo:from_tag:to_tag
+# or: owner/repo from_tag to_tag
+
+# AppCD repositories
+appcd-dev/iac-gen:v0.56.0:v0.58.0
+appcd-dev/appcd:v0.67.0:v0.68.0
+appcd-dev/appcd-ui:v0.19.6:v0.20.0
+
+# Alternative format with spaces
+# appcd-dev/iac-gen v0.56.0 v0.58.0
+# appcd-dev/appcd v0.67.0 v0.68.0
+# appcd-dev/appcd-ui v0.19.6 v0.20.0
+
+# Add more repositories as needed
+# owner/repo:tag1:tag2
