@@ -1,4 +1,4 @@
-.PHONY: help setup generate-input process-changes clean test-linear
+.PHONY: help setup generate-input fetch_changes_between_tags_from_input clean test-linear
 
 # Configuration
 PYTHON := python3
@@ -16,12 +16,12 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo ""
-	@echo "  make setup            - Set up environment and test Linear API"
-	@echo "  make generate-input   - Generate input.json from deployed vs new versions"
-	@echo "  make process-changes  - Extract ticket changes between versions"
-	@echo "  make full-workflow    - Run complete workflow (generate + process)"
-	@echo "  make test-linear      - Test Linear API connection"
-	@echo "  make clean            - Remove generated files"
+	@echo "  make setup                                 - Set up environment and test Linear API"
+	@echo "  make generate-input                        - Generate input.json from deployed vs new versions"
+	@echo "  make fetch_changes_between_tags_from_input - Extract ticket changes between versions"
+	@echo "  make full-workflow                         - Run complete workflow (generate + process)"
+	@echo "  make test-linear                           - Test Linear API connection"
+	@echo "  make clean                                 - Remove generated files"
 	@echo ""
 	@echo "Configuration:"
 	@echo "  VERSION_URL = $(VERSION_URL)"
@@ -85,7 +85,7 @@ generate-input-custom:
 		--pretty
 
 # Process all repos and extract ticket changes
-process-changes:
+fetch_changes_between_tags_from_input:
 	@if [ ! -f "$(INPUT_FILE)" ]; then \
 		echo "❌ Error: $(INPUT_FILE) not found. Run 'make generate-input' first."; \
 		exit 1; \
@@ -104,7 +104,7 @@ process-changes:
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Run complete workflow: generate input + process changes
-full-workflow: generate-input process-changes
+full-workflow: generate-input fetch_changes_between_tags_from_input
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✅ Full workflow completed successfully!"

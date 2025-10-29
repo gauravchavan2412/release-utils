@@ -76,6 +76,14 @@ SERVICE_VERSION_MAP = {
         "version_key": "AUDIT_MANAGER_VERSION",
         "repository": "https://github.com/appcd-dev/audit-manager"
     },
+    "aiden": {
+        "version_key": "AIDEN_VERSION",
+        "repository": "https://github.com/appcd-dev/aiden"
+    },
+    "aiden-ui": {
+        "version_key": "AIDEN_UI_VERSION",
+        "repository": "https://github.com/appcd-dev/aiden-ui-v2"
+    }
 }
 
 
@@ -180,7 +188,8 @@ def generate_input_json(current_versions: Dict[str, str], new_versions: Dict[str
         repository = service_info["repository"]
         
         # Current versions use service names as keys (from version.json)
-        current_tag = current_versions.get(service_name, "")
+        # Default to v1.0.0 if version not found
+        current_tag = current_versions.get(service_name, "v1.0.0")
         # New versions use environment variable names as keys (from .env)
         new_tag = new_versions.get(version_key, "")
         

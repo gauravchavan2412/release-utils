@@ -421,13 +421,26 @@ class RepositoryProcessor:
         # Fetch Linear details for all unique tickets
         ticket_details_map = self.fetch_all_ticket_details(all_tickets_set)
         
-        # Build all_tickets array as strings: "TICKET-ID: Summary"
+        # Calculate max widths for uniform formatting
+        max_ticket_id_len = max(len(tid) for tid in all_tickets_set) if all_tickets_set else 0
+        max_status_len = 0
+        for ticket_id in all_tickets_set:
+            details = ticket_details_map.get(ticket_id)
+            if details and details.get('state'):
+                status_len = len(details['state'])
+                max_status_len = max(max_status_len, status_len)
+        # Ensure minimum width for "Unknown" status
+        max_status_len = max(max_status_len, len('Unknown'))
+        
+        # Build all_tickets array as uniformly formatted strings: "TICKET-ID: status: Summary"
         all_tickets = []
         for ticket_id in sorted(all_tickets_set):
             details = ticket_details_map.get(ticket_id)
             if details and details.get('title'):
-                # Format: "AE-1234: Ticket Summary"
-                all_tickets.append(f"{ticket_id}: {details['title']}")
+                # Format with uniform spacing: "AE-1234    : Done        : Ticket Summary"
+                status = details.get('state', 'Unknown')
+                formatted_ticket = f"{ticket_id:<{max_ticket_id_len}}: {status:<{max_status_len}}: {details['title']}"
+                all_tickets.append(formatted_ticket)
             else:
                 # If no details available, just include the ID
                 all_tickets.append(ticket_id)

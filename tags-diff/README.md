@@ -125,7 +125,7 @@ input.json  →  Compare tags  →  Extract tickets  →  final_tag_differences.
 ### Run It
 
 ```bash
-make process-changes
+make fetch_changes_between_tags_from_input
 ```
 
 **Requires:** Input file from Workflow 1
@@ -184,14 +184,14 @@ Saved to: `generated_files/final_tag_differences.json`
 ## Makefile Commands
 
 ```bash
-make help              # Show all commands
-make setup             # Initial setup
-make generate-input    # Workflow 1: Generate input.json
-make process-changes   # Workflow 2: Extract tickets
-make full-workflow     # Run both workflows
-make test-linear       # Test Linear API
-make clean             # Remove generated files
-make config            # Show current configuration
+make help                                # Show all commands
+make setup                               # Initial setup
+make generate-input                      # Workflow 1: Generate input.json
+make fetch_changes_between_tags_from_input # Workflow 2: Extract tickets
+make full-workflow                       # Run both workflows
+make test-linear                         # Test Linear API
+make clean                               # Remove generated files
+make config                              # Show current configuration
 ```
 
 ---
@@ -308,7 +308,7 @@ make generate-input
 cat generated_files/input_file/input.json | jq '.[] | select(.current_tag != .new_tag)'
 
 # Extract tickets
-make process-changes
+make fetch_changes_between_tags_from_input
 
 # Result: generated_files/final_tag_differences.json
 ```
@@ -321,7 +321,7 @@ python generate_input_json.py \
   --env-url "https://raw.githubusercontent.com/org/repo/staging/.env" \
   --pretty
 
-make process-changes
+make fetch_changes_between_tags_from_input
 ```
 
 ### Single Repository Comparison
