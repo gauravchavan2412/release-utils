@@ -14,12 +14,14 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 import urllib.request
 import urllib.error
 import ssl
 from typing import Dict, Optional, Tuple
 import re
+import requests
 
 
 # Service to version key and repository mapping
@@ -85,6 +87,193 @@ SERVICE_VERSION_MAP = {
         "repository": "https://github.com/appcd-dev/aiden-ui-v2"
     }
 }
+
+
+def get_latest_tag_from_github(repo: str, token: Optional[str] = None) -> Optional[str]:
+    """
+    Fetch the latest tag from a GitHub repository.
+    
+    Args:
+        repo: Repository in format 'owner/repo'
+        token: GitHub Personal Access Token. If None, will try to get from env variables.
+        
+    Returns:
+        Latest tag name (without 'refs/tags/' prefix) or None if failed
+    """
+    # Try to get token from environment if not provided
+    if not token:
+        token = os.getenv('GITHUB_PAT') or os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
+    
+    headers = {
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    
+    if token:
+        headers['Authorization'] = f'token {token}'
+    
+    # GitHub API endpoint to list tags
+    url = f"https://api.github.com/repos/{repo}/tags"
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=30, params={'per_page': 1})
+        response.raise_for_status()
+        
+        tags = response.json()
+        if tags and len(tags) > 0:
+            # Return the tag name (without 'refs/tags/' prefix if present)
+            tag_name = tags[0].get('name', '')
+            return tag_name if tag_name else None
+        
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️  Warning: Failed to fetch latest tag from {repo}: {e}", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"⚠️  Warning: Error fetching latest tag from {repo}: {e}", file=sys.stderr)
+        return None
+
+
+def fetch_env_file_from_github_tag(repo: str, tag: str, file_path: str = ".env", token: Optional[str] = None) -> Optional[str]:
+    """
+    Fetch the .env file content from a GitHub repository at a specific tag.
+    
+    Args:
+        repo: Repository in format 'owner/repo'
+        tag: Tag name (e.g., 'v2025.12.23')
+        file_path: Path to the file (default: ".env")
+        token: GitHub Personal Access Token. If None, will try to get from env variables.
+        
+    Returns:
+        File content as string if found, or None if not found
+    """
+    # Try to get token from environment if not provided
+    if not token:
+        token = os.getenv('GITHUB_PAT') or os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
+    
+    headers = {
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    
+    if token:
+        headers['Authorization'] = f'token {token}'
+    
+    # Fetch file from specific tag
+    url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
+    params = {'ref': tag}
+    
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            # GitHub API returns file content in base64 encoding
+            if data.get('encoding') == 'base64':
+                import base64
+                content = base64.b64decode(data['content']).decode('utf-8')
+                return content
+            else:
+                # If not base64, try to get content directly
+                content = data.get('content', '')
+                if content:
+                    import base64
+                    try:
+                        content = base64.b64decode(content).decode('utf-8')
+                        return content
+                    except:
+                        return content
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️  Warning: Failed to fetch {file_path} from {repo} at tag {tag}: {e}", file=sys.stderr)
+        return None
+
+
+def fetch_env_file_from_github_repo(repo: str, file_path: str = ".env", token: Optional[str] = None, preferred_branch: Optional[str] = None) -> Optional[Tuple[str, str]]:
+    """
+    Fetch the .env file content from a GitHub repository by trying different branches.
+    
+    Args:
+        repo: Repository in format 'owner/repo'
+        file_path: Path to the file (default: ".env")
+        token: GitHub Personal Access Token. If None, will try to get from env variables.
+        preferred_branch: Branch to try first (e.g., from URL)
+        
+    Returns:
+        Tuple of (branch_name, file_content) if found, or None if not found
+    """
+    # Try to get token from environment if not provided
+    if not token:
+        token = os.getenv('GITHUB_PAT') or os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
+    
+    headers = {
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    
+    if token:
+        headers['Authorization'] = f'token {token}'
+    
+    # Try preferred branch first, then common branch names
+    branches_to_try = []
+    if preferred_branch:
+        branches_to_try.append(preferred_branch)
+    branches_to_try.extend(['main', 'master', 'develop', 'dev'])
+    # Remove duplicates while preserving order
+    seen = set()
+    branches_to_try = [b for b in branches_to_try if not (b in seen or seen.add(b))]
+    
+    for branch in branches_to_try:
+        url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
+        params = {'ref': branch}
+        
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                # GitHub API returns file content in base64 encoding
+                if data.get('encoding') == 'base64':
+                    import base64
+                    content = base64.b64decode(data['content']).decode('utf-8')
+                    return (branch, content)
+                else:
+                    # If not base64, try to get content directly
+                    content = data.get('content', '')
+                    if content:
+                        import base64
+                        try:
+                            content = base64.b64decode(content).decode('utf-8')
+                            return (branch, content)
+                        except:
+                            return (branch, content)
+        except requests.exceptions.RequestException:
+            continue
+    
+    return None
+
+
+def convert_github_blob_to_raw_url(url: str) -> str:
+    """
+    Convert GitHub blob URL to raw URL.
+    
+    Converts URLs like:
+    https://github.com/owner/repo/blob/branch/path/to/file
+    to:
+    https://raw.githubusercontent.com/owner/repo/branch/path/to/file
+    
+    Args:
+        url: GitHub blob URL or any URL
+        
+    Returns:
+        Converted raw URL if it's a GitHub blob URL, otherwise returns the original URL
+    """
+    # Pattern: https://github.com/{owner}/{repo}/blob/{branch}/{path}
+    github_blob_pattern = r'^https://github\.com/([^/]+)/([^/]+)/blob/(.+)$'
+    
+    match = re.match(github_blob_pattern, url)
+    if match:
+        owner, repo, rest = match.groups()
+        raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{rest}"
+        return raw_url
+    
+    # Return original URL if it doesn't match the pattern
+    return url
 
 
 def fetch_url_content(url: str, timeout: int = 30) -> Tuple[bool, str]:
@@ -314,12 +503,68 @@ Examples:
         print(f"\n📥 Reading new versions from local file: {args.env_file}")
         new_versions = read_local_env_file(args.env_file)
     else:
-        print(f"\n📥 Fetching new versions from: {args.env_url}")
-        success, content = fetch_url_content(args.env_url, args.timeout)
+        # Convert GitHub blob URL to raw URL if needed
+        env_url = convert_github_blob_to_raw_url(args.env_url)
+        if env_url != args.env_url:
+            print(f"\n🔄 Converted GitHub blob URL to raw URL:")
+            print(f"   Original: {args.env_url}")
+            print(f"   Raw URL:  {env_url}")
+        
+        print(f"\n📥 Fetching new versions from: {env_url}")
+        success, content = fetch_url_content(env_url, args.timeout)
         
         if not success:
-            print(f"❌ Failed to fetch .env file: {content}", file=sys.stderr)
-            sys.exit(1)
+            # If it's a 404 and a GitHub URL, try to find the file using GitHub API
+            if "404" in content or "Not Found" in content:
+                # Remove query parameters and extract repo info from URL
+                # Handle URLs like: https://raw.githubusercontent.com/owner/repo/refs/heads/branch/file?token=...
+                url_without_query = env_url.split('?')[0]  # Remove query parameters
+                
+                # Extract repo info from URL - try both converted and original URLs
+                # Pattern handles: raw.githubusercontent.com/owner/repo/branch/file or refs/heads/branch/file
+                raw_github_pattern = r'https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/(?:refs/heads/)?([^/]+)/(.+)'
+                blob_github_pattern = r'https://github\.com/([^/]+)/([^/]+)/blob/(?:refs/heads/)?([^/]+)/(.+)'
+                
+                # Try to match the converted URL first, then the original
+                match = re.match(raw_github_pattern, url_without_query)
+                if not match:
+                    original_url_no_query = args.env_url.split('?')[0]
+                    match = re.match(blob_github_pattern, original_url_no_query)
+                
+                if match:
+                    owner = match.group(1)
+                    repo = match.group(2)
+                    branch = match.group(3)
+                    # For raw URL: group 4 is the file path
+                    # For blob URL: group 4 is the file path
+                    file_path = match.group(4)
+                    
+                    print(f"\n🔍 File not found at specified URL. Searching for {file_path} in {owner}/{repo}...")
+                    github_token = os.getenv('GITHUB_PAT') or os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
+                    
+                    # Try the specific branch first, then fall back to common branches
+                    result = fetch_env_file_from_github_repo(f"{owner}/{repo}", file_path, github_token, preferred_branch=branch)
+                    
+                    if result:
+                        found_branch, file_content = result
+                        print(f"✅ Found file in branch: {found_branch}")
+                        print(f"📥 Fetching content using GitHub API...")
+                        content = file_content
+                        success = True
+                        env_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{found_branch}/{file_path} (fetched via API)"
+                    else:
+                        print(f"❌ Could not find {file_path} in {owner}/{repo} repository.", file=sys.stderr)
+                        print(f"   Tried branches: {branch}, main, master, develop, dev", file=sys.stderr)
+                        if not github_token:
+                            print(f"   Note: GitHub token may be required. Set GITHUB_PAT or GH_TOKEN environment variable.", file=sys.stderr)
+                        print(f"   Original error: {content}", file=sys.stderr)
+                        sys.exit(1)
+                else:
+                    print(f"❌ Failed to fetch .env file: {content}", file=sys.stderr)
+                    sys.exit(1)
+            else:
+                print(f"❌ Failed to fetch .env file: {content}", file=sys.stderr)
+                sys.exit(1)
         
         new_versions = parse_env_file(content)
     
@@ -331,6 +576,47 @@ Examples:
     # Generate input JSON
     print(f"\n🔄 Generating input JSON...")
     input_data = generate_input_json(current_versions, new_versions)
+    
+    # Update appcd current_tag: fetch .env from appcd-dist at the current_tag (which is a tag in appcd-dist)
+    print(f"\n🔍 Updating appcd current_tag...")
+    
+    # Find and update the appcd entry
+    appcd_updated = False
+    github_token = os.getenv('GITHUB_PAT') or os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
+    
+    for item in input_data:
+        if item.get("service") == "appcd":
+            old_current_tag = item.get("current_tag", "")
+            
+            # Update current_tag: fetch .env from appcd-dist at the current_tag (which is a tag in appcd-dist)
+            if old_current_tag:
+                print(f"   Fetching .env file from appcd-dist at tag {old_current_tag}...")
+                env_content = fetch_env_file_from_github_tag("appcd-dev/appcd-dist", old_current_tag, ".env", github_token)
+                
+                if env_content:
+                    # Parse APPCD_VERSION from the fetched .env file
+                    tag_env_vars = parse_env_file(env_content)
+                    appcd_version_from_tag = tag_env_vars.get("APPCD_VERSION", "")
+                    
+                    if appcd_version_from_tag:
+                        item["current_tag"] = appcd_version_from_tag
+                        print(f"✅ Updated appcd current_tag:")
+                        print(f"   Old: {old_current_tag} (appcd-dist tag)")
+                        print(f"   New: {appcd_version_from_tag} (APPCD_VERSION from appcd-dist/{old_current_tag}/.env)")
+                    else:
+                        print(f"⚠️  Warning: APPCD_VERSION not found in .env file from appcd-dist tag {old_current_tag}. Keeping current_tag: {old_current_tag}")
+                else:
+                    print(f"⚠️  Warning: Could not fetch .env file from appcd-dist at tag {old_current_tag}. Keeping current_tag: {old_current_tag}")
+                    if not github_token:
+                        print(f"   Tip: Set GITHUB_PAT or GH_TOKEN environment variable for automatic tag fetching.")
+            else:
+                print(f"⚠️  Warning: No current_tag found for appcd. Skipping current_tag update.")
+            
+            appcd_updated = True
+            break
+    
+    if not appcd_updated:
+        print("⚠️  Warning: appcd service not found in input data. Skipping tag update.")
     
     # Write to file
     output_path = args.output

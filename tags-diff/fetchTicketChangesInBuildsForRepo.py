@@ -133,6 +133,10 @@ class LinearTicketExtractor:
                 assignee {
                     name
                 }
+                project {
+                    id
+                    name
+                }
             }
         }
         """
@@ -185,7 +189,9 @@ class LinearTicketExtractor:
                         'title': issue['title'],
                         'state': issue['state']['name'] if issue.get('state') else 'Unknown',
                         'priority': issue.get('priority', 'Unknown'),
-                        'assignee': issue['assignee']['name'] if issue.get('assignee') else 'Unassigned'
+                        'assignee': issue['assignee']['name'] if issue.get('assignee') else 'Unassigned',
+                        'projectId': issue['project']['id'] if issue.get('project') else 'No Project',
+                        'projectName': issue['project']['name'] if issue.get('project') else 'No Project'
                     }
                 else:
                     if self.debug:

@@ -68,7 +68,19 @@ make generate-input
 
 ### Custom URLs
 
-Edit `Makefile` or run:
+Use the interactive menu to select from predefined environments:
+
+```bash
+make generate-input-custom
+```
+
+This will present you with options:
+1. **Stage** - https://stage.dev.stackgen.com/version.json
+2. **Demo** - https://demo.cloud.stackgen.com/version.json
+3. **Production** - https://cloud.stackgen.com/version.json
+4. **Custom URL** - Enter your own URL
+
+Or run directly with Python:
 
 ```bash
 python generate_input_json.py \
@@ -184,14 +196,15 @@ Saved to: `generated_files/final_tag_differences.json`
 ## Makefile Commands
 
 ```bash
-make help                                # Show all commands
-make setup                               # Initial setup
-make generate-input                      # Workflow 1: Generate input.json
+make help                                  # Show all commands
+make setup                                 # Initial setup
+make generate-input                        # Workflow 1: Generate input.json (default URLs)
+make generate-input-custom                 # Workflow 1: Generate with environment selection menu
 make fetch_changes_between_tags_from_input # Workflow 2: Extract tickets
-make full-workflow                       # Run both workflows
-make test-linear                         # Test Linear API
-make clean                               # Remove generated files
-make config                              # Show current configuration
+make full-workflow                         # Run both workflows
+make test-linear                           # Test Linear API
+make clean                                 # Remove generated files
+make config                                # Show current configuration
 ```
 
 ---
@@ -313,11 +326,24 @@ make fetch_changes_between_tags_from_input
 # Result: generated_files/final_tag_differences.json
 ```
 
-### Compare Production vs Staging
+### Compare Different Environments
+
+Use the interactive menu to select an environment:
+
+```bash
+# Interactive menu with predefined environments
+make generate-input-custom
+# Select: 1 for Stage, 2 for Demo, 3 for Production, or 4 for Custom
+
+# Extract tickets
+make fetch_changes_between_tags_from_input
+```
+
+Or use Python directly:
 
 ```bash
 python generate_input_json.py \
-  --version-url "https://prod.stackgen.com/version.json" \
+  --version-url "https://cloud.stackgen.com/version.json" \
   --env-url "https://raw.githubusercontent.com/org/repo/staging/.env" \
   --pretty
 

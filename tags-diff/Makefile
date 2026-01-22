@@ -92,8 +92,21 @@ generate-input-custom:
 	echo ""; \
 	echo "Selected version.json: $$version_url"; \
 	echo ""; \
-	read -p "Enter .env file URL [$(ENV_URL)]: " env_url; \
-	env_url=$${env_url:-$(ENV_URL)}; \
+	echo "Select .env file source:"; \
+	echo "  1. Default (appcd-dist/main) - https://raw.githubusercontent.com/appcd-dev/appcd-dist/main/.env"; \
+	echo "  2. GitHub blob URL - https://github.com/appcd-dev/appcd-dist/blob/main/.env"; \
+	echo "  3. Custom URL"; \
+	echo ""; \
+	read -p "Enter choice [1-3] (default: 1): " env_choice; \
+	env_choice=$${env_choice:-1}; \
+	case $$env_choice in \
+		1) env_url="https://raw.githubusercontent.com/appcd-dev/appcd-dist/main/.env" ;; \
+		2) env_url="https://github.com/appcd-dev/appcd-dist/blob/main/.env" ;; \
+		3) read -p "Enter custom .env file URL: " env_url ;; \
+		*) echo "Invalid choice, using default"; env_url="$(ENV_URL)" ;; \
+	esac; \
+	echo ""; \
+	echo "Selected .env URL: $$env_url"; \
 	echo ""; \
 	$(PYTHON) generate_input_json.py \
 		--version-url "$$version_url" \

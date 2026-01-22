@@ -156,6 +156,10 @@ class RepositoryProcessor:
                 assignee {
                     name
                 }
+                project {
+                    id
+                    name
+                }
             }
         }
         """
@@ -191,7 +195,9 @@ class RepositoryProcessor:
                         'title': issue['title'],
                         'state': issue['state']['name'] if issue.get('state') else 'Unknown',
                         'priority': issue.get('priority', 0),
-                        'assignee': issue['assignee']['name'] if issue.get('assignee') else 'Unassigned'
+                        'assignee': issue['assignee']['name'] if issue.get('assignee') else 'Unassigned',
+                        'projectId': issue['project']['id'] if issue.get('project') else 'No Project',
+                        'projectName': issue['project']['name'] if issue.get('project') else 'No Project'
                     }
             
             return None
@@ -229,6 +235,103 @@ class RepositoryProcessor:
             print(f"\n  ✅ Successfully fetched {successful}/{total} ticket details\n")
         
         return ticket_details
+    
+    def fetch_project_details(self, project_id: str) -> Optional[Dict[str, str]]:
+        """
+        Fetch project details from Linear API.
+        
+        Args:
+            project_id: Linear project ID
+            
+        Returns:
+            Dictionary with project details or None if fetch fails
+        """
+        if not self.linear_api_key or project_id == 'No Project':
+            return None
+        
+        query = """
+        query ProjectById($id: String!) {
+            project(id: $id) {
+                id
+                name
+                url
+                description
+                state
+                progress
+            }
+        }
+        """
+        
+        headers = {
+            "Authorization": self.linear_api_key,
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "query": query,
+            "variables": {"id": project_id}
+        }
+        
+        try:
+            response = requests.post(
+                self.linear_api_url,
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if 'errors' in data:
+                    return None
+                
+                if 'data' in data and data['data'].get('project'):
+                    project = data['data']['project']
+                    return {
+                        'id': project['id'],
+                        'name': project['name'],
+                        'url': project.get('url', ''),
+                        'description': project.get('description', ''),
+                        'state': project.get('state', 'Unknown'),
+                        'progress': project.get('progress', 0)
+                    }
+            
+            return None
+        except Exception:
+            return None
+    
+    def fetch_all_project_details(self, project_ids: Set[str]) -> Dict[str, Optional[Dict[str, str]]]:
+        """
+        Fetch details for all projects from Linear API.
+        
+        Args:
+            project_ids: Set of project IDs
+            
+        Returns:
+            Dictionary mapping project IDs to their details
+        """
+        if not self.fetch_linear_details or not self.linear_api_key:
+            return {project_id: None for project_id in project_ids}
+        
+        project_details = {}
+        total = len(project_ids)
+        
+        if self.verbose and total > 0:
+            print(f"\n🏗️  Fetching Linear project details for {total} unique projects...")
+        
+        for idx, project_id in enumerate(sorted(project_ids), 1):
+            if self.verbose and total > 0:
+                print(f"  [{idx}/{total}] Fetching project {project_id}...", end='\r')
+            
+            details = self.fetch_project_details(project_id)
+            project_details[project_id] = details
+        
+        if self.verbose and total > 0:
+            successful = sum(1 for d in project_details.values() if d is not None)
+            print(f"\n  ✅ Successfully fetched {successful}/{total} project details\n")
+        
+        return project_details
     
     def should_process_service(self, service: Dict) -> bool:
         """
@@ -421,6 +524,16 @@ class RepositoryProcessor:
         # Fetch Linear details for all unique tickets
         ticket_details_map = self.fetch_all_ticket_details(all_tickets_set)
         
+        # Collect unique project IDs from ticket details
+        project_ids = set()
+        for ticket_id in all_tickets_set:
+            details = ticket_details_map.get(ticket_id)
+            if details and details.get('projectId') and details['projectId'] != 'No Project':
+                project_ids.add(details['projectId'])
+        
+        # Fetch project details
+        project_details_map = self.fetch_all_project_details(project_ids)
+        
         # Calculate max widths for uniform formatting
         max_ticket_id_len = max(len(tid) for tid in all_tickets_set) if all_tickets_set else 0
         max_status_len = 0
@@ -456,6 +569,20 @@ class RepositoryProcessor:
         for prefix in tickets_by_project:
             tickets_by_project[prefix] = sorted(tickets_by_project[prefix])
         
+        # Generate projects list for output
+        projects_list = []
+        for project_id in sorted(project_ids):
+            project_details = project_details_map.get(project_id)
+            if project_details:
+                projects_list.append({
+                    'id': project_details['id'],
+                    'name': project_details['name'],
+                    'url': project_details['url'],
+                    'description': project_details['description'],
+                    'state': project_details['state'],
+                    'progress': project_details['progress']
+                })
+        
         # Generate output structure
         return {
             'metadata': {
@@ -464,11 +591,13 @@ class RepositoryProcessor:
                 'processed': processed,
                 'skipped': skipped,
                 'failed': failed,
-                'total_unique_tickets': len(all_tickets_set)
+                'total_unique_tickets': len(all_tickets_set),
+                'total_unique_projects': len(projects_list)
             },
             'services': results,
             'all_tickets': all_tickets,
-            'tickets_by_project': tickets_by_project
+            'tickets_by_project': tickets_by_project,
+            'projects': projects_list
         }
 
 
@@ -570,6 +699,20 @@ Examples:
                 json.dump(results, f, ensure_ascii=False)
         
         print(f"\n✅ Results saved to: {output_file}")
+        
+        # Generate separate projects_list.json file
+        if 'projects' in results and results['projects']:
+            projects_output_file = output_dir / "projects_list.json"
+            with open(projects_output_file, 'w') as f:
+                if args.pretty:
+                    json.dump(results['projects'], f, indent=2, ensure_ascii=False)
+                else:
+                    json.dump(results['projects'], f, ensure_ascii=False)
+            
+            print(f"✅ Projects list saved to: {projects_output_file}")
+            print(f"📊 Found {len(results['projects'])} unique projects")
+        else:
+            print("ℹ️  No projects found to save")
         
     except Exception as e:
         print(f"Error writing output file: {e}", file=sys.stderr)
