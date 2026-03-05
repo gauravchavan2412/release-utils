@@ -18,7 +18,7 @@ help:
 	@echo ""
 	@echo "  make setup                                 - Set up environment and test Linear API"
 	@echo "  make generate-input                        - Generate input.json (default: stage)"
-	@echo "  make generate-input-custom                 - Generate input.json with environment selection"
+	@echo "  make generate-input-custom STACKGEN_TAG=<tag> - Generate input.json (STACKGEN_TAG required)"
 	@echo "  make fetch_changes_between_tags_from_input - Extract ticket changes between versions"
 	@echo "  make full-workflow                         - Run complete workflow (generate + process)"
 	@echo "  make test-linear                           - Test Linear API connection"
@@ -68,10 +68,22 @@ generate-input:
 	@echo "✅ Generated: $(INPUT_FILE)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Custom URLs for generate-input
+# Custom URLs for generate-input (STACKGEN_TAG is required)
 generate-input-custom:
+	@if [ -z "$(STACKGEN_TAG)" ]; then \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo "❌ Error: STACKGEN_TAG is required for generate-input-custom"; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo ""; \
+		echo "Usage: make generate-input-custom STACKGEN_TAG=<tag>"; \
+		echo "Example: make generate-input-custom STACKGEN_TAG=v2026.2.7"; \
+		echo ""; \
+		echo "STACKGEN_TAG is the appcd-dist tag used to fetch the .env file (e.g. v2026.2.7)."; \
+		echo ""; \
+		exit 1; \
+	fi
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "Generating input.json with custom URLs..."
+	@echo "Generating input.json with custom URLs (STACKGEN_TAG=$(STACKGEN_TAG))..."
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 	@echo "Select version.json URL:"
@@ -92,25 +104,27 @@ generate-input-custom:
 	echo ""; \
 	echo "Selected version.json: $$version_url"; \
 	echo ""; \
-	echo "Select .env file source:"; \
-	echo "  1. Default (appcd-dist/main) - https://raw.githubusercontent.com/appcd-dev/appcd-dist/main/.env"; \
-	echo "  2. GitHub blob URL - https://github.com/appcd-dev/appcd-dist/blob/main/.env"; \
+	echo "Select .env file source (uses STACKGEN_TAG=$(STACKGEN_TAG) for appcd-dist):"; \
+	echo "  1. Raw URL      - https://raw.githubusercontent.com/appcd-dev/appcd-dist/$(STACKGEN_TAG)/.env"; \
+	echo "  2. GitHub blob  - https://github.com/appcd-dev/appcd-dist/blob/$(STACKGEN_TAG)/.env"; \
 	echo "  3. Custom URL"; \
 	echo ""; \
 	read -p "Enter choice [1-3] (default: 1): " env_choice; \
 	env_choice=$${env_choice:-1}; \
 	case $$env_choice in \
-		1) env_url="https://raw.githubusercontent.com/appcd-dev/appcd-dist/main/.env" ;; \
-		2) env_url="https://github.com/appcd-dev/appcd-dist/blob/main/.env" ;; \
+		1) env_url="https://raw.githubusercontent.com/appcd-dev/appcd-dist/$(STACKGEN_TAG)/.env" ;; \
+		2) env_url="https://github.com/appcd-dev/appcd-dist/blob/$(STACKGEN_TAG)/.env" ;; \
 		3) read -p "Enter custom .env file URL: " env_url ;; \
-		*) echo "Invalid choice, using default"; env_url="$(ENV_URL)" ;; \
+		*) echo "Invalid choice, using default"; env_url="https://raw.githubusercontent.com/appcd-dev/appcd-dist/$(STACKGEN_TAG)/.env" ;; \
 	esac; \
 	echo ""; \
 	echo "Selected .env URL: $$env_url"; \
+	echo "STACKGEN_TAG: $(STACKGEN_TAG)"; \
 	echo ""; \
 	$(PYTHON) generate_input_json.py \
 		--version-url "$$version_url" \
 		--env-url "$$env_url" \
+		--stackgen-tag "$(STACKGEN_TAG)" \
 		--output "$(INPUT_FILE)" \
 		--pretty
 

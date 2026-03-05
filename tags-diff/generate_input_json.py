@@ -464,6 +464,11 @@ Examples:
         action="store_true",
         help="Pretty print JSON output"
     )
+    parser.add_argument(
+        "--stackgen-tag",
+        metavar="TAG",
+        help="Tag in appcd-dev/appcd-dist to fetch .env from (e.g. v2026.2.7). When set with appcd-dist env URL, fetches .env via GitHub API at this tag. Required when using make generate-input-custom."
+    )
     
     args = parser.parse_args()
     
@@ -577,46 +582,36 @@ Examples:
     print(f"\n🔄 Generating input JSON...")
     input_data = generate_input_json(current_versions, new_versions)
     
-    # Update appcd current_tag: fetch .env from appcd-dist at the current_tag (which is a tag in appcd-dist)
-    print(f"\n🔍 Updating appcd current_tag...")
-    
-    # Find and update the appcd entry
-    appcd_updated = False
-    github_token = os.getenv('GITHUB_PAT') or os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
-    
-    for item in input_data:
-        if item.get("service") == "appcd":
-            old_current_tag = item.get("current_tag", "")
-            
-            # Update current_tag: fetch .env from appcd-dist at the current_tag (which is a tag in appcd-dist)
-            if old_current_tag:
-                print(f"   Fetching .env file from appcd-dist at tag {old_current_tag}...")
-                env_content = fetch_env_file_from_github_tag("appcd-dev/appcd-dist", old_current_tag, ".env", github_token)
-                
+    # Update appcd current_tag only when --stackgen-tag is provided: fetch .env from appcd-dist at that tag
+    # (Do not use appcd's current_tag from version.json—e.g. v0.75.1-hotfix.1—since that tag may not exist in appcd-dist.)
+    if args.stackgen_tag:
+        print(f"\n🔍 Updating appcd current_tag using stackgen_tag: {args.stackgen_tag}...")
+        github_token = os.getenv('GITHUB_PAT') or os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
+        appcd_updated = False
+        for item in input_data:
+            if item.get("service") == "appcd":
+                print(f"   Fetching .env file from appcd-dist at tag {args.stackgen_tag}...")
+                env_content = fetch_env_file_from_github_tag("appcd-dev/appcd-dist", args.stackgen_tag, ".env", github_token)
                 if env_content:
-                    # Parse APPCD_VERSION from the fetched .env file
                     tag_env_vars = parse_env_file(env_content)
                     appcd_version_from_tag = tag_env_vars.get("APPCD_VERSION", "")
-                    
                     if appcd_version_from_tag:
                         item["current_tag"] = appcd_version_from_tag
                         print(f"✅ Updated appcd current_tag:")
-                        print(f"   Old: {old_current_tag} (appcd-dist tag)")
-                        print(f"   New: {appcd_version_from_tag} (APPCD_VERSION from appcd-dist/{old_current_tag}/.env)")
+                        print(f"   stackgen_tag: {args.stackgen_tag} (appcd-dist)")
+                        print(f"   appcd current_tag: {appcd_version_from_tag} (APPCD_VERSION from appcd-dist/{args.stackgen_tag}/.env)")
                     else:
-                        print(f"⚠️  Warning: APPCD_VERSION not found in .env file from appcd-dist tag {old_current_tag}. Keeping current_tag: {old_current_tag}")
+                        print(f"⚠️  Warning: APPCD_VERSION not found in .env from appcd-dist tag {args.stackgen_tag}. Keeping current_tag: {item.get('current_tag', '')}")
                 else:
-                    print(f"⚠️  Warning: Could not fetch .env file from appcd-dist at tag {old_current_tag}. Keeping current_tag: {old_current_tag}")
+                    print(f"⚠️  Warning: Could not fetch .env from appcd-dist at tag {args.stackgen_tag}. Keeping current_tag: {item.get('current_tag', '')}", file=sys.stderr)
                     if not github_token:
-                        print(f"   Tip: Set GITHUB_PAT or GH_TOKEN environment variable for automatic tag fetching.")
-            else:
-                print(f"⚠️  Warning: No current_tag found for appcd. Skipping current_tag update.")
-            
-            appcd_updated = True
-            break
-    
-    if not appcd_updated:
-        print("⚠️  Warning: appcd service not found in input data. Skipping tag update.")
+                        print(f"   Tip: Set GITHUB_PAT or GH_TOKEN for tag fetching.", file=sys.stderr)
+                appcd_updated = True
+                break
+        if not appcd_updated:
+            print("⚠️  Warning: appcd service not found in input data. Skipping tag update.")
+    else:
+        print(f"\nℹ️  No --stackgen-tag provided. Skipping appcd current_tag update (use make generate-input-custom STACKGEN_TAG=<tag>).")
     
     # Write to file
     output_path = args.output
