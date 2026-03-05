@@ -28,20 +28,27 @@ import requests
 class RepositoryProcessor:
     """Process multiple repositories and extract Linear tickets from version changes."""
     
-    def __init__(self, skip_unchanged: bool = True, verbose: bool = False, 
-                 fetch_linear_details: bool = True):
+    def __init__(self, skip_unchanged: bool = True, verbose: bool = False,
+                 fetch_linear_details: bool = True, commit_diff_log_path: Optional[str] = None):
         """
         Initialize the processor.
-        
+
         Args:
             skip_unchanged: Skip repositories where current_tag == new_tag
             verbose: Enable verbose output
             fetch_linear_details: Whether to fetch ticket details from Linear API
+            commit_diff_log_path: If set, write full commit diff with messages to this file
         """
         self.skip_unchanged = skip_unchanged
         self.verbose = verbose
         self.fetch_linear_details = fetch_linear_details
-        self.ticket_pattern = re.compile(r'\[([A-Z]{2,6}-\d{1,6})\]')
+        self.commit_diff_log_path = commit_diff_log_path
+        # Match ticket IDs: [PROJ-123] or PROJ-123 at word boundary (e.g. "PLAT-1794 |", "OPS-219:")
+        self.ticket_pattern = re.compile(
+            r'\[([A-Z]{2,6}-\d{1,6})\]'
+            r'|(?:^|[\s(])([A-Z]{2,6}-\d{1,6})(?=[\s:|\)\]\-,]|$)',
+            re.MULTILINE
+        )
         self.linear_api_key = os.getenv('LINEAR_API_KEY')
         self.linear_api_url = "https://api.linear.app/graphql"
     
@@ -127,7 +134,10 @@ class RepositoryProcessor:
         tickets = set()
         matches = self.ticket_pattern.findall(text)
         for match in matches:
-            tickets.add(match)
+            # match is a tuple when pattern has multiple groups: (bracketed, unbracketed)
+            for g in (match if isinstance(match, tuple) else (match,)):
+                if g:
+                    tickets.add(g)
         return tickets
     
     def fetch_ticket_details(self, ticket_id: str) -> Optional[Dict[str, str]]:
@@ -379,6 +389,9 @@ class RepositoryProcessor:
             return None
         
         print(f"  📦 Processing {service_name} ({current_tag} → {new_tag})...")
+        print(f"     Comparing 2 tags for repository: {repo_path} (service: {service_name})")
+        print(f"     From tag: {current_tag}  →  To tag: {new_tag}")
+        print(f"     Fetching commit messages between these tags...")
         
         # Handle empty current_tag - might be a new service
         if not current_tag and new_tag:
@@ -412,9 +425,30 @@ class RepositoryProcessor:
                 'error': None
             }
         
-        # Call compare_tags.py
+        # --- Log git commit changes: fetch comparison and optionally write to file ---
+        # Call compare_tags.py to get full diff between current_tag and new_tag (summary, commit list, full messages, file changes)
         output = self.call_compare_tags(repo_path, current_tag, new_tag)
         
+        if output:
+            # Log git commit changes to stdout (each repo's comparison and commit messages)
+            # print(f"\n     --- Repository: {repo_path} | Tags: {current_tag} → {new_tag} | Commit messages between tags ---")
+            # for line in output.splitlines():
+            #     print(f"     {line}")
+            # print(f"     --- End of comparison for {repo_path} ---\n")
+            # Write git commit changes to file: append this repo's full comparison output for later analysis (e.g. scan_ticket_formats.py)
+            if self.commit_diff_log_path:
+                try:
+                    Path(self.commit_diff_log_path).parent.mkdir(parents=True, exist_ok=True)
+                    with open(self.commit_diff_log_path, "a", encoding="utf-8") as f:
+                        f.write(f"\n{'='*80}\n")
+                        f.write(f"Repository: {repo_path} | Service: {service_name}\n")
+                        f.write(f"Tags: {current_tag} → {new_tag}\n")
+                        f.write(f"{'='*80}\n\n")
+                        f.write(output)
+                        f.write(f"\n{'='*80}\n\n")
+                except OSError as e:
+                    if self.verbose:
+                        print(f"  ⚠️  Could not write commit diff log: {e}", file=sys.stderr)
         if not output:
             return {
                 'service': service_name,
@@ -464,7 +498,20 @@ class RepositoryProcessor:
         print("=" * 70)
         print("Processing All Repositories")
         print("=" * 70)
-        
+        # Initialize file for logging git commit changes: create/truncate and write header (each repo's diff appended later in process_service)
+        if self.commit_diff_log_path:
+            try:
+                Path(self.commit_diff_log_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(self.commit_diff_log_path, "w", encoding="utf-8") as f:
+                    f.write("Commit differences with messages (all repositories)\n")
+                    f.write(f"Generated at: {datetime.now().isoformat()}\n")
+                    f.write("Use: python scan_ticket_formats.py <this_file> to find other Linear ticket formats.\n")
+                    f.write("=" * 80 + "\n\n")
+                if self.verbose:
+                    print(f"📄 Writing commit diffs to: {self.commit_diff_log_path}\n")
+            except OSError as e:
+                if self.verbose:
+                    print(f"  ⚠️  Could not create commit diff log: {e}", file=sys.stderr)
         results = []
         total_services = len(services)
         processed = 0
@@ -652,6 +699,17 @@ Examples:
         action="store_true",
         help="Skip fetching ticket details from Linear API"
     )
+    parser.add_argument(
+        "--commit-diff-log",
+        metavar="FILE",
+        default="generated_files/commit_differences_with_messages.txt",
+        help="Write commit diff with messages to FILE for format analysis (default: generated_files/commit_differences_with_messages.txt)"
+    )
+    parser.add_argument(
+        "--no-commit-diff-log",
+        action="store_true",
+        help="Do not write commit diff log file"
+    )
     
     args = parser.parse_args()
     
@@ -681,10 +739,12 @@ Examples:
         print(f"📝 Output file: {output_file}")
     
     # Initialize processor
+    commit_diff_log_path = None if args.no_commit_diff_log else args.commit_diff_log
     processor = RepositoryProcessor(
         skip_unchanged=not args.include_unchanged,
         verbose=args.verbose,
-        fetch_linear_details=not args.no_fetch_details if hasattr(args, 'no_fetch_details') else True
+        fetch_linear_details=not args.no_fetch_details if hasattr(args, 'no_fetch_details') else True,
+        commit_diff_log_path=commit_diff_log_path
     )
     
     # Process all services

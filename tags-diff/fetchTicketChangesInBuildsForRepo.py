@@ -24,9 +24,12 @@ class LinearTicketExtractor:
     
     def __init__(self, api_key: Optional[str] = None, debug: bool = False):
         """Initialize the extractor with the Linear ticket pattern."""
-        # Pattern to match Linear tickets: [ABCD-12345] format
-        # Where ABCD is 2-4 uppercase letters and 12345 is 1-6 digits
-        self.ticket_pattern = re.compile(r'\[([A-Z]{2,6}-\d{1,6})\]')
+        # Match ticket IDs: [PROJ-123] or PROJ-123 at word boundary (e.g. "PLAT-1794 |", "OPS-219:")
+        self.ticket_pattern = re.compile(
+            r'\[([A-Z]{2,6}-\d{1,6})\]'
+            r'|(?:^|[\s(])([A-Z]{2,6}-\d{1,6})(?=[\s:|\)\]\-,]|$)',
+            re.MULTILINE
+        )
         self.api_key = api_key or os.getenv('LINEAR_API_KEY')
         self.linear_api_url = "https://api.linear.app/graphql"
         self.debug = debug
@@ -102,7 +105,9 @@ class LinearTicketExtractor:
         tickets = set()
         matches = self.ticket_pattern.findall(text)
         for match in matches:
-            tickets.add(match)
+            for g in (match if isinstance(match, tuple) else (match,)):
+                if g:
+                    tickets.add(g)
         return tickets
     
     def fetch_ticket_details(self, ticket_id: str) -> Optional[Dict[str, str]]:

@@ -223,6 +223,37 @@ class GitHubTagComparator:
         return results
 
 
+def print_comparison_banner(repo: str, from_tag: str, to_tag: str):
+    """Print an elaborate banner explaining which repository and which two tags are being compared."""
+    print(f"\n{'='*80}")
+    print("COMPARING 2 TAGS FOR REPOSITORY")
+    print(f"{'='*80}")
+    print(f"  Repository : {repo}")
+    print(f"  From tag   : {from_tag}")
+    print(f"  To tag     : {to_tag}")
+    print(f"  (All commit messages between these two tags are listed below.)")
+    print(f"{'='*80}")
+
+
+def log_commit_messages_between_tags(commits: List[Dict], repo: str, from_tag: str, to_tag: str):
+    """Log all git commit messages between the two tags for this repository."""
+    if not commits:
+        print(f"\n📋 COMMIT MESSAGES BETWEEN TAGS: None (no commits between {from_tag} and {to_tag} in {repo})")
+        return
+    print(f"\n📋 COMMIT MESSAGES BETWEEN TAGS ({repo}: {from_tag} → {to_tag})")
+    print(f"   Total commits: {len(commits)}. Full messages:")
+    print("-" * 60)
+    for i, commit in enumerate(commits, 1):
+        msg = commit.get("commit", {}).get("message", "No message")
+        sha = commit.get("sha", "")[:7]
+        author = commit.get("commit", {}).get("author", {}).get("name", "?")
+        print(f"  [{i}] {sha} ({author}):")
+        for line in msg.splitlines():
+            print(f"      {line}")
+        print()
+    print("-" * 60)
+
+
 def print_comparison_summary(results: Dict):
     """Print a summary of the comparison results."""
     repo = results['repo']
@@ -359,14 +390,21 @@ def main():
         if args.json:
             print(json.dumps(results, indent=2, default=str))
         else:
+            repo = results.get('repo', '')
+            from_tag = results.get('from_tag', '')
+            to_tag = results.get('to_tag', '')
+            # Elaborate banner: which repository and which two tags we are comparing
+            print_comparison_banner(repo, from_tag, to_tag)
             print_comparison_summary(results)
-            
             if not args.no_commits:
                 print_commits(results['commits'])
-            
+            # Log all commit messages between the two tags for this repository
+            if results.get('commits'):
+                log_commit_messages_between_tags(
+                    results['commits'], repo=repo, from_tag=from_tag, to_tag=to_tag
+                )
             if not args.no_files:
                 print_file_changes(results['files'], args.details)
-            
             print(f"\n{'='*80}")
         
     except ValueError as e:
