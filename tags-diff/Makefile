@@ -1,4 +1,4 @@
-.PHONY: help setup generate-input generate-input-custom fetch_changes_between_tags_from_input clean test-linear
+.PHONY: help setup generate-input generate-input-custom fetch_changes_between_tags_from_input clean test-linear monthly-release monthly-release-no-ticket
 
 # Configuration
 PYTHON := python3
@@ -20,6 +20,8 @@ help:
 	@echo "  make generate-input                        - Generate input.json (default: stage)"
 	@echo "  make generate-input-custom STACKGEN_TAG=<tag> - Generate input.json (STACKGEN_TAG required)"
 	@echo "  make fetch_changes_between_tags_from_input - Extract ticket changes between versions"
+	@echo "  make monthly-release STACKGEN_TAG=<tag>    - Full pipeline: clean → prod input + .env → tickets → Linear"
+	@echo "  make monthly-release-no-ticket STACKGEN_TAG=<tag> - Steps 1–3 only (no Linear issue)"
 	@echo "  make full-workflow                         - Run complete workflow (generate + process)"
 	@echo "  make test-linear                           - Test Linear API connection"
 	@echo "  make clean                                 - Remove generated files"
@@ -176,6 +178,21 @@ test-linear:
 		echo ""; \
 		$(PYTHON) test_linear_api.py; \
 	fi
+
+# Full monthly release pipeline (see run_monthly_release.py)
+monthly-release:
+	@if [ -z "$(STACKGEN_TAG)" ]; then \
+		echo "Usage: make monthly-release STACKGEN_TAG=v2026.2.7"; \
+		exit 1; \
+	fi
+	@$(PYTHON) run_monthly_release.py "$(STACKGEN_TAG)"
+
+monthly-release-no-ticket:
+	@if [ -z "$(STACKGEN_TAG)" ]; then \
+		echo "Usage: make monthly-release-no-ticket STACKGEN_TAG=v2026.2.7"; \
+		exit 1; \
+	fi
+	@$(PYTHON) run_monthly_release.py "$(STACKGEN_TAG)" --skip-ticket
 
 # Clean generated files
 clean:
