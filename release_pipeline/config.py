@@ -1,11 +1,12 @@
-"""Paths and URLs for the monthly release pipeline (tags-diff root)."""
+"""Paths and URLs for the release automation pipeline (repository root)."""
 
 from pathlib import Path
 
 # Production StackGen deployment — "current" tags to compare from
 VERSION_JSON_PRODUCTION = "https://cloud.stackgen.com/version.json"
 
-# appcd-dist raw .env at the candidate release tag (same as make generate-input-custom option 1)
+# Candidate "new" versions: always raw .env from appcd-dist at the user tag, e.g.
+# https://raw.githubusercontent.com/appcd-dev/appcd-dist/v2026.3.12/.env
 APPCD_DIST_RAW_ENV = (
     "https://raw.githubusercontent.com/appcd-dev/appcd-dist/{stackgen_tag}/.env"
 )
@@ -18,10 +19,15 @@ GENERATE_INPUT_SCRIPT = "generate_input_json.py"
 PROCESS_REPOS_SCRIPT = "process_all_repos.py"
 
 
-def tags_diff_root() -> Path:
-    """Directory containing Makefile, generate_input_json.py, etc."""
+def project_root() -> Path:
+    """Repository root (parent of the release_pipeline package)."""
     return Path(__file__).resolve().parent.parent
 
 
 def appcd_dist_raw_env_url(stackgen_tag: str) -> str:
     return APPCD_DIST_RAW_ENV.format(stackgen_tag=stackgen_tag.strip())
+
+
+def final_tag_differences_path(root: Path) -> Path:
+    """Default JSON input for Step 4 (monthly Linear ticket)."""
+    return root / FINAL_TAG_DIFF_REL

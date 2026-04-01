@@ -1,5 +1,9 @@
 import subprocess
 import sys
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parent
+
 
 class GitLogFetcher:
     def __init__(self, repo_url, tag1, tag2):
@@ -9,9 +13,9 @@ class GitLogFetcher:
 
     def fetch_and_parse_logs(self):
         try:
-            # Call the diff_tags.py script
+            diff_tags_script = _REPO_ROOT / "diff_tags.py"
             result = subprocess.run(
-                [sys.executable, 'tags-diff/diff_tags.py', self.repo_url, self.tag1, self.tag2],
+                [sys.executable, str(diff_tags_script), self.repo_url, self.tag1, self.tag2],
                 check=True, capture_output=True, text=True
             )
 

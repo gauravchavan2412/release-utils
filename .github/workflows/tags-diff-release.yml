@@ -1,0 +1,56 @@
+# Monthly release automation: clean, generate input.json with STACKGEN_TAG, fetch ticket changes.
+# Optional repository secrets: GITHUB_PAT (also exported as GH_TOKEN for scripts).
+# Optional: LINEAR_API_KEY for richer ticket output in process_all_repos.
+
+name: Monthly release (tag diff)
+
+on:
+  workflow_dispatch:
+    inputs:
+      stackgen_candidate_tag:
+        description: "appcd-dist tag for .env (e.g. v2026.2.7)"
+        required: true
+        type: string
+      version_json_url:
+        description: "Optional. Override deployed version.json URL (default: production https://cloud.stackgen.com/version.json)"
+        required: false
+        type: string
+        default: "https://cloud.stackgen.com/version.json"
+
+jobs:
+  monthly-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run monthly release pipeline (steps 1–3, no Linear ticket)
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_PAT }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: |
+          set -euo pipefail
+          ARGS=(--skip-ticket)
+          if [ -n "${{ inputs.version_json_url }}" ]; then
+            ARGS+=(--version-json-url "${{ inputs.version_json_url }}")
+          fi
+          python run_monthly_release.py "${{ inputs.stackgen_candidate_tag }}" "${ARGS[@]}"
+
+      - name: Upload generated artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monthly-release-generated-files
+          path: |
+            generated_files/
+          if-no-files-found: warn

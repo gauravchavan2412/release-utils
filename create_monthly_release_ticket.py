@@ -39,31 +39,31 @@ _TICKET_ID_ONLY = re.compile(r"^([A-Za-z]+-\d+)$")
 
 def parse_ticket_line(line: str) -> tuple[str, str]:
     """Return (ticket_id, summary). Summary is title from Linear when line includes status/title."""
-    s = (line or "").strip()
-    if not s:
+    line_stripped = (line or "").strip()
+    if not line_stripped:
         return "", ""
-    m = _TICKET_WITH_META.match(s)
-    if m:
-        return m.group(1).strip(), m.group(3).strip()
-    m2 = _TICKET_ID_ONLY.match(s)
-    if m2:
-        return m2.group(1), ""
-    return s, ""
+    meta_match = _TICKET_WITH_META.match(line_stripped)
+    if meta_match:
+        return meta_match.group(1).strip(), meta_match.group(3).strip()
+    id_only_match = _TICKET_ID_ONLY.match(line_stripped)
+    if id_only_match:
+        return id_only_match.group(1), ""
+    return line_stripped, ""
 
 
 def ticket_summaries_from_all_tickets(data: Dict[str, Any]) -> Dict[str, str]:
     """Map ticket id -> title/summary from `all_tickets` strings (see process_all_repos)."""
-    out: Dict[str, str] = {}
-    raw = data.get("all_tickets")
-    if not isinstance(raw, list):
-        return out
-    for item in raw:
-        if not isinstance(item, str):
+    summaries: Dict[str, str] = {}
+    raw_entries = data.get("all_tickets")
+    if not isinstance(raw_entries, list):
+        return summaries
+    for raw_line in raw_entries:
+        if not isinstance(raw_line, str):
             continue
-        tid, summary = parse_ticket_line(item)
-        if tid:
-            out[tid] = summary
-    return out
+        ticket_id, summary_text = parse_ticket_line(raw_line)
+        if ticket_id:
+            summaries[ticket_id] = summary_text
+    return summaries
 
 
 # Linear API returns project.state; active work is typically "started" (UI: In Progress).
@@ -72,17 +72,20 @@ IN_PROGRESS_PROJECT_STATES = frozenset({"started"})
 
 def linear_projects_in_progress(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Subset of `projects` from final_tag_differences.json where state is in progress."""
-    raw = data.get("projects")
-    if not isinstance(raw, list):
+    raw_projects = data.get("projects")
+    if not isinstance(raw_projects, list):
         return []
-    out: List[Dict[str, Any]] = []
-    for p in raw:
-        if not isinstance(p, dict):
+    in_progress: List[Dict[str, Any]] = []
+    for project_entry in raw_projects:
+        if not isinstance(project_entry, dict):
             continue
-        st = str(p.get("state", "")).strip().lower()
-        if st in IN_PROGRESS_PROJECT_STATES:
-            out.append(p)
-    return sorted(out, key=lambda x: str(x.get("name", "") or "").lower())
+        state_normalized = str(project_entry.get("state", "")).strip().lower()
+        if state_normalized in IN_PROGRESS_PROJECT_STATES:
+            in_progress.append(project_entry)
+    return sorted(
+        in_progress,
+        key=lambda row: str(row.get("name", "") or "").lower(),
+    )
 
 
 def linear_request(api_key: str, query: str, variables: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -121,16 +124,20 @@ def load_release_data(
     with input_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
-    summaries = ticket_summaries_from_all_tickets(data)
-    projects_ip = linear_projects_in_progress(data)
+    ticket_summaries = ticket_summaries_from_all_tickets(data)
+    projects_in_progress_list = linear_projects_in_progress(data)
 
     grouped = data.get("tickets_by_project")
     if isinstance(grouped, dict) and grouped:
-        out: Dict[str, List[str]] = {}
-        for k, v in grouped.items():
-            if isinstance(v, list):
-                out[k] = sorted(set(str(x) for x in v if x))
-        return dict(sorted(out.items(), key=lambda kv: kv[0])), summaries, projects_ip
+        by_prefix: Dict[str, List[str]] = {}
+        for prefix, ticket_list in grouped.items():
+            if isinstance(ticket_list, list):
+                by_prefix[prefix] = sorted(set(str(x) for x in ticket_list if x))
+        return (
+            dict(sorted(by_prefix.items(), key=lambda kv: kv[0])),
+            ticket_summaries,
+            projects_in_progress_list,
+        )
 
     derived: Dict[str, List[str]] = {}
     all_tickets = data.get("all_tickets", [])
@@ -151,7 +158,11 @@ def load_release_data(
 
     for proj in list(derived.keys()):
         derived[proj] = sorted(set(derived[proj]))
-    return dict(sorted(derived.items(), key=lambda kv: kv[0])), summaries, projects_ip
+    return (
+        dict(sorted(derived.items(), key=lambda kv: kv[0])),
+        ticket_summaries,
+        projects_in_progress_list,
+    )
 
 
 # Project prefixes grouped for Linear mentions in the monthly summary body
@@ -161,53 +172,56 @@ SECTION_GAURAV_PROJECTS = ("CLOUD", "DPP")
 
 def _append_project_tickets(
     lines: List[str],
-    project: str,
+    project_prefix: str,
     tickets: List[str],
-    id_to_summary: Dict[str, str],
+    ticket_id_to_summary: Dict[str, str],
 ) -> None:
     if not tickets:
         return
-    lines.append(f"### {project} ({len(tickets)})")
-    for tid in tickets:
-        summ = id_to_summary.get(tid, "").strip()
-        if summ:
-            lines.append(f"- `{tid}` — {summ}")
+    lines.append(f"### {project_prefix} ({len(tickets)})")
+    for ticket_id in tickets:
+        summary_text = ticket_id_to_summary.get(ticket_id, "").strip()
+        if summary_text:
+            lines.append(f"- `{ticket_id}` — {summary_text}")
         else:
-            lines.append(f"- `{tid}`")
+            lines.append(f"- `{ticket_id}`")
     lines.append("")
 
 
-def _append_linear_projects_in_progress(lines: List[str], projects: List[Dict[str, Any]]) -> None:
-    if not projects:
+def _append_linear_projects_in_progress(
+    lines: List[str],
+    linear_projects: List[Dict[str, Any]],
+) -> None:
+    if not linear_projects:
         return
     lines.append("## Projects — In Progress")
     lines.append("")
-    for p in projects:
-        name = str(p.get("name") or "Untitled").strip() or "Untitled"
-        url = str(p.get("url") or "").strip()
-        desc = str(p.get("description") or "").strip()
-        prog = p.get("progress")
-        pct_s = ""
-        if isinstance(prog, (int, float)):
-            pct_s = f"{prog * 100:.0f}%"
-        head = f"- [{name}]({url})" if url else f"- **{name}**"
-        if pct_s:
-            head = f"{head} — {pct_s}"
-        lines.append(head)
-        if desc:
-            lines.append(f"  {desc}")
+    for project in linear_projects:
+        display_name = str(project.get("name") or "Untitled").strip() or "Untitled"
+        project_url = str(project.get("url") or "").strip()
+        description = str(project.get("description") or "").strip()
+        progress_value = project.get("progress")
+        percent_label = ""
+        if isinstance(progress_value, (int, float)):
+            percent_label = f"{progress_value * 100:.0f}%"
+        bullet = f"- [{display_name}]({project_url})" if project_url else f"- **{display_name}**"
+        if percent_label:
+            bullet = f"{bullet} — {percent_label}"
+        lines.append(bullet)
+        if description:
+            lines.append(f"  {description}")
     lines.append("")
 
 
 def build_summary(
     grouped: Dict[str, List[str]],
     month_label: str,
-    id_to_summary: Optional[Dict[str, str]] = None,
+    ticket_id_to_summary: Optional[Dict[str, str]] = None,
     in_progress_projects: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    id_to_summary = id_to_summary or {}
+    ticket_id_to_summary = ticket_id_to_summary or {}
     in_progress_projects = in_progress_projects or []
-    total = sum(len(v) for v in grouped.values())
+    total = sum(len(ticket_ids) for ticket_ids in grouped.values())
     lines = [
         f"Monthly release summary for {month_label}.",
         "",
@@ -217,30 +231,46 @@ def build_summary(
 
     _append_linear_projects_in_progress(lines, in_progress_projects)
 
-    ab_set = set(SECTION_ABHISHES_PROJECTS)
-    g_set = set(SECTION_GAURAV_PROJECTS)
+    abhishes_prefixes = set(SECTION_ABHISHES_PROJECTS)
+    gaurav_prefixes = set(SECTION_GAURAV_PROJECTS)
 
-    ab_keys = [p for p in SECTION_ABHISHES_PROJECTS if grouped.get(p)]
-    g_keys = [p for p in SECTION_GAURAV_PROJECTS if grouped.get(p)]
-    other_keys = sorted(k for k in grouped if k not in ab_set and k not in g_set and grouped.get(k))
+    abhishes_section_keys = [
+        prefix for prefix in SECTION_ABHISHES_PROJECTS if grouped.get(prefix)
+    ]
+    gaurav_section_keys = [
+        prefix for prefix in SECTION_GAURAV_PROJECTS if grouped.get(prefix)
+    ]
+    other_prefix_keys = sorted(
+        prefix
+        for prefix in grouped
+        if prefix not in abhishes_prefixes
+        and prefix not in gaurav_prefixes
+        and grouped.get(prefix)
+    )
 
-    if ab_keys:
+    if abhishes_section_keys:
         lines.append("## AE & PLAT — @Abhishes")
         lines.append("")
-        for project in ab_keys:
-            _append_project_tickets(lines, project, grouped[project], id_to_summary)
+        for prefix in abhishes_section_keys:
+            _append_project_tickets(
+                lines, prefix, grouped[prefix], ticket_id_to_summary
+            )
 
-    if g_keys:
+    if gaurav_section_keys:
         lines.append("## CLOUD & DPP — @Gaurav")
         lines.append("")
-        for project in g_keys:
-            _append_project_tickets(lines, project, grouped[project], id_to_summary)
+        for prefix in gaurav_section_keys:
+            _append_project_tickets(
+                lines, prefix, grouped[prefix], ticket_id_to_summary
+            )
 
-    if other_keys:
+    if other_prefix_keys:
         lines.append("## Other projects")
         lines.append("")
-        for project in other_keys:
-            _append_project_tickets(lines, project, grouped[project], id_to_summary)
+        for prefix in other_prefix_keys:
+            _append_project_tickets(
+                lines, prefix, grouped[prefix], ticket_id_to_summary
+            )
 
     lines.append("---")
     lines.append("Generated by release automation from release-utils output.")
@@ -248,33 +278,37 @@ def build_summary(
 
 
 def resolve_assignee_id(api_key: str, assignee_query: str) -> str:
-    query = """
+    graphql_query = """
     query {
       users(first: 250) {
         nodes { id name displayName email }
       }
     }
     """
-    users = linear_request(api_key, query).get("users", {}).get("nodes", [])
-    q = assignee_query.lower().strip()
-    best = None
-    for u in users:
-        hay = " ".join(str(u.get(k, "")) for k in ("name", "displayName", "email")).lower()
-        if q in hay:
-            best = u
-            if u.get("name", "").lower() == q or u.get("displayName", "").lower() == q:
+    user_nodes = linear_request(api_key, graphql_query).get("users", {}).get("nodes", [])
+    query_normalized = assignee_query.lower().strip()
+    selected_user = None
+    for user in user_nodes:
+        searchable = " ".join(
+            str(user.get(key, "")) for key in ("name", "displayName", "email")
+        ).lower()
+        if query_normalized in searchable:
+            selected_user = user
+            if (
+                user.get("name", "").lower() == query_normalized
+                or user.get("displayName", "").lower() == query_normalized
+            ):
                 break
-    if not best:
+    if not selected_user:
         raise RuntimeError(f"Could not find assignee matching '{assignee_query}'")
-    return best["id"]
+    return selected_user["id"]
 
 
 def resolve_template_id(api_key: str, template_name: str) -> str:
     """Resolve template id using root Query.templates (a list, not a connection)."""
-    needle = template_name.lower().strip()
+    template_name_normalized = template_name.lower().strip()
 
     # Linear GraphQL: Query.templates is [Template!]! with no pagination args.
-    # (Organization.templates / Team.templates use TemplateConnection with nodes.)
     query_templates = """
     query {
       templates {
@@ -286,25 +320,33 @@ def resolve_template_id(api_key: str, template_name: str) -> str:
     }
     """
 
-    data = linear_request(api_key, query_templates)
-    raw = data.get("templates", [])
-    nodes = raw if isinstance(raw, list) else []
-    if not nodes:
+    response_data = linear_request(api_key, query_templates)
+    template_rows = response_data.get("templates", [])
+    template_list = template_rows if isinstance(template_rows, list) else []
+    if not template_list:
         raise RuntimeError("No templates returned by Linear `templates` query")
 
-    # Prefer issue templates (Linear `Template.type` describes entity kind, e.g. issue).
-    issue_like = [n for n in nodes if "issue" in str(n.get("type", "")).lower()]
-    pool = issue_like or nodes
+    issue_templates = [
+        row
+        for row in template_list
+        if "issue" in str(row.get("type", "")).lower()
+    ]
+    search_pool = issue_templates or template_list
 
-    for t in pool:
-        if str(t.get("name", "")).lower().strip() == needle:
-            return t["id"]
-    for t in pool:
-        if needle in str(t.get("name", "")).lower():
-            return t["id"]
+    for template_row in search_pool:
+        if str(template_row.get("name", "")).lower().strip() == template_name_normalized:
+            return template_row["id"]
+    for template_row in search_pool:
+        if template_name_normalized in str(template_row.get("name", "")).lower():
+            return template_row["id"]
 
-    available = ", ".join(sorted(str(t.get("name", "")) for t in pool if t.get("name")))
-    raise RuntimeError(f"Template '{template_name}' not found in templates. Available: {available or 'none'}")
+    available_names = ", ".join(
+        sorted(str(row.get("name", "")) for row in search_pool if row.get("name"))
+    )
+    raise RuntimeError(
+        f"Template '{template_name}' not found in templates. "
+        f"Available: {available_names or 'none'}"
+    )
 
 
 def resolve_team_id(api_key: str, team_key: str) -> str:
@@ -320,13 +362,13 @@ def resolve_team_id(api_key: str, team_key: str) -> str:
     }
     """
     variables: Dict[str, Any] = {"filter": {"key": {"eqIgnoreCase": key}}}
-    data = linear_request(api_key, query, variables)
-    nodes = data.get("teams", {}).get("nodes", [])
-    for t in nodes:
-        if str(t.get("key", "")).upper() == key.upper():
-            return t["id"]
-    if nodes:
-        return nodes[0]["id"]
+    response_data = linear_request(api_key, query, variables)
+    team_nodes = response_data.get("teams", {}).get("nodes", [])
+    for team in team_nodes:
+        if str(team.get("key", "")).upper() == key.upper():
+            return team["id"]
+    if team_nodes:
+        return team_nodes[0]["id"]
     raise RuntimeError(f"No Linear team found for key '{team_key}'")
 
 
@@ -359,20 +401,24 @@ def create_issue(
         {**base, "issueTemplateId": template_id},
     ]
 
-    last_error = None
-    for inp in candidate_inputs:
+    last_error: Optional[Exception] = None
+    for issue_input in candidate_inputs:
         try:
-            created = linear_request(api_key, mutation, {"input": inp}).get("issueCreate", {})
-            if not created.get("success"):
+            payload = linear_request(api_key, mutation, {"input": issue_input}).get(
+                "issueCreate", {}
+            )
+            if not payload.get("success"):
                 raise RuntimeError("issueCreate returned success=false")
-            issue = created.get("issue")
-            if not issue:
+            created_issue = payload.get("issue")
+            if not created_issue:
                 raise RuntimeError("issueCreate returned no issue")
-            return issue
-        except Exception as e:
-            last_error = e
+            return created_issue
+        except Exception as exc:
+            last_error = exc
 
-    raise RuntimeError(f"Failed creating issue with template fields templateId/issueTemplateId: {last_error}")
+    raise RuntimeError(
+        f"Failed creating issue with template fields templateId/issueTemplateId: {last_error}"
+    )
 
 
 def run_create_monthly_release(cfg: MonthlyTicketConfig) -> int:
@@ -383,8 +429,10 @@ def run_create_monthly_release(cfg: MonthlyTicketConfig) -> int:
         return 1
 
     month_label = cfg.month_label.strip() or datetime.now().strftime("%B %Y")
-    grouped, id_to_summary, in_progress_projects = load_release_data(input_path)
-    summary = build_summary(grouped, month_label, id_to_summary, in_progress_projects)
+    grouped, ticket_id_to_summary, in_progress_projects = load_release_data(input_path)
+    summary = build_summary(
+        grouped, month_label, ticket_id_to_summary, in_progress_projects
+    )
     title = cfg.title.strip() or f"Monthly Release - {month_label}"
 
     api_key = cfg.api_key if cfg.api_key is not None else os.getenv("LINEAR_API_KEY")
@@ -438,12 +486,12 @@ def run_create_monthly_release(cfg: MonthlyTicketConfig) -> int:
         print(f"Title:      {issue.get('title')}")
         print(f"URL:        {issue.get('url')}")
         return 0
-    except Exception as e:
-        print(f"❌ Failed to create ticket: {e}", file=sys.stderr)
+    except Exception as exc:
+        print(f"❌ Failed to create ticket: {exc}", file=sys.stderr)
         return 1
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
+def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create Monthly Release ticket in Linear")
     parser.add_argument("--input", "-i", default="generated_files/final_tag_differences.json")
     parser.add_argument("--api-key", default=os.getenv("LINEAR_API_KEY"))
@@ -467,7 +515,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_arg_parser().parse_args()
+    args = build_argument_parser().parse_args()
     cfg = MonthlyTicketConfig(
         input_path=Path(args.input),
         api_key=args.api_key,
