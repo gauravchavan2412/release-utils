@@ -1,4 +1,4 @@
-.PHONY: help setup generate-input generate-input-custom fetch_changes_between_tags_from_input clean test-linear monthly-release monthly-release-no-ticket
+.PHONY: help setup generate-input generate-input-custom generate-custom-input-file fetch_changes_between_tags_from_input clean test-linear monthly-release monthly-release-no-ticket
 
 # Configuration
 PYTHON := python3
@@ -22,6 +22,7 @@ help:
 	@echo "  make setup                                 - Set up environment and test Linear API"
 	@echo "  make generate-input STACKGEN_TAG=<tag>    - input.json (prod version.json + raw appcd-dist .env at tag)"
 	@echo "  make generate-input-custom STACKGEN_TAG=<tag> - Generate input.json (STACKGEN_TAG required)"
+	@echo "  make generate-custom-input-file            - input.json from appcd-dist .env between FROM_REF and TO_REF"
 	@echo "  make fetch_changes_between_tags_from_input - Extract ticket changes between versions"
 	@echo "  make monthly-release STACKGEN_TAG=<tag>    - Full pipeline: clean → prod input + .env → tickets → Linear"
 	@echo "  make monthly-release-no-ticket STACKGEN_TAG=<tag> - Steps 1–3 only (no Linear issue)"
@@ -120,6 +121,35 @@ generate-input-custom:
 		--version-url "$$version_url" \
 		--env-url "$(APPCD_DIST_RAW_ENV)" \
 		--stackgen-tag "$(STACKGEN_TAG)" \
+		--output "$(INPUT_FILE)" \
+		--pretty
+
+# Generate input.json by comparing appcd-dist .env between two refs/tags/branches
+generate-custom-input-file:
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Generating custom input.json from appcd-dist .env refs..."
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@from_ref="$(FROM_REF)"; \
+	to_ref="$(TO_REF)"; \
+	if [ -z "$$from_ref" ]; then \
+		read -p "Enter FROM_REF (base tag/branch): " from_ref; \
+	fi; \
+	if [ -z "$$to_ref" ]; then \
+		read -p "Enter TO_REF (target tag/branch): " to_ref; \
+	fi; \
+	if [ -z "$$from_ref" ] || [ -z "$$to_ref" ]; then \
+		echo "❌ Both FROM_REF and TO_REF are required."; \
+		echo "Usage: make generate-custom-input-file FROM_REF=<tag-or-branch> TO_REF=<tag-or-branch>"; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "Comparing appcd-dist refs: $$from_ref → $$to_ref"; \
+	echo "Output: $(INPUT_FILE)"; \
+	echo ""; \
+	$(PYTHON) generate_custom_input_file.py \
+		--from-ref "$$from_ref" \
+		--to-ref "$$to_ref" \
 		--output "$(INPUT_FILE)" \
 		--pretty
 
