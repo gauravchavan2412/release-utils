@@ -1,198 +1,147 @@
-# StackGen Release Utilities
+# StackGen release-utils
 
-A collection of Python utilities for managing StackGen deployments and version comparisons.
+Python utilities for StackGen version checks, tag-to-tag diffs, and **monthly release automation** (input generation, Linear ticket extraction, optional Linear issue creation).
 
-## Utilities
+All tag-diff and pipeline scripts live in the **repository root** (no `tags-diff/` subdirectory).
 
-### 1. Version Fetcher (`fetch_version.py`)
+---
 
-Fetches version information from StackGen environments.
+## Prerequisites
 
-### 2. Version Comparator (`compare_versions.py`) 🆕
-
-Compares deployed versions with repository `.env` file versions using GitHub API.
-
-## Installation
-
-1. Install the required dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Set up GitHub Personal Access Token (for version comparison):
+For GitHub API calls (rate limits, private repos):
+
 ```bash
-export GITHUB_PAT=your_github_personal_access_token
-# OR
-export GH_TOKEN=your_github_personal_access_token
+export GITHUB_PAT=ghp_...   # or GH_TOKEN / GITHUB_TOKEN
 ```
 
-## Version Fetcher Usage
+For Linear-enriched output (`process_all_repos`, monthly ticket body):
 
-### Interactive Mode (Recommended)
+```bash
+export LINEAR_API_KEY=lin_api_...
+```
+
+Optional `make setup` copies `env.template` → `.env` for local `LINEAR_API_KEY`.
+
+---
+
+## Tag diff & monthly release (main flow)
+
+### Outputs (generated, gitignored)
+
+| Path | Purpose |
+|------|---------|
+| `generated_files/input_file/input.json` | Service → repo → current/new tags |
+| `generated_files/final_tag_differences.json` | Consolidated tickets + projects |
+| `generated_files/commit_differences_with_messages.txt` | Raw commit compare logs (optional) |
+
+### Makefile (from repo root)
+
+| Target | Purpose |
+|--------|---------|
+| `make help` | List targets |
+| `make setup` | `.env` from template + Linear smoke test |
+| `make generate-input STACKGEN_TAG=v2026.3.12` | Production `version.json` + **raw** appcd-dist `.env` at that tag |
+| `make generate-input-custom STACKGEN_TAG=vX.Y.Z` | Interactive **version.json** only; `.env` is always raw at that tag |
+| `make fetch_changes_between_tags_from_input` | Run `process_all_repos.py` on `input.json` |
+| `make full-workflow STACKGEN_TAG=<tag>` | `generate-input` then `fetch_changes...` |
+| `make monthly-release STACKGEN_TAG=vX.Y.Z` | Full pipeline: clean → prod input → tickets → **Linear issue** |
+| `make monthly-release-no-ticket STACKGEN_TAG=vX.Y.Z` | Steps 1–3 only (no Linear create) |
+| `make clean` | Remove `generated_files/` + local `__pycache__` |
+| `make test-linear` | Linear API test |
+
+### One-shot pipeline (`run_monthly_release.py`)
+
+Non-interactive: **production** `version.json` (`https://cloud.stackgen.com/version.json`), appcd-dist **raw** `.env` at your tag, then tickets, then optional Linear ticket.
+
+```bash
+# Full flow (needs LINEAR_API_KEY for step 4)
+python run_monthly_release.py v2026.2.7
+
+# Use stage/demo deployed versions instead (optional)
+python run_monthly_release.py v2026.2.7 --version-json-url https://stage.dev.stackgen.com/version.json
+
+# CI / artifacts only
+python run_monthly_release.py v2026.2.7 --skip-ticket
+
+# Preview Linear body without creating
+python run_monthly_release.py v2026.2.7 --dry-run-ticket
+```
+
+Use `--project-root` if the script is not run from the repo root.
+
+`make generate-input STACKGEN_TAG=<tag>` loads new versions from  
+`https://raw.githubusercontent.com/appcd-dev/appcd-dist/<tag>/.env` (always the raw URL). Override deployed `version.json` with `VERSION_URL=...` if needed.  
+`make monthly-release` / `monthly-release-no-ticket` use the same raw `.env` pattern; optional **`VERSION_JSON_URL=...`** only changes which **version.json** URL is used.
+
+### Monthly Linear issue (`create_monthly_release_ticket.py`)
+
+Creates an issue from `generated_files/final_tag_differences.json` (after a successful fetch step). Configure template, team (`--team-key HZ`), assignee, etc. See `python create_monthly_release_ticket.py --help`.
+
+### Other CLI tools
+
+| Script | Role |
+|--------|------|
+| `verify_latest_tags_vs_appcd_dist_env.py` | Compare latest GitHub tags vs appcd-dist `main` `.env` |
+| `parse_ui_changes_tickets.py` | Parse ticket IDs from text |
+| `scan_ticket_formats.py` | Scan files for ticket ID patterns |
+| `fetchTicketChangesInBuildsForRepo.py` | Single-repo ticket extraction via `compare_tags.py` |
+| `compare_tags.py` | GitHub compare API between two tags |
+| `fetch_version_json.py` | Fetch/print a `version.json` URL |
+| `test_linear_api.py` | Linear connectivity |
+
+---
+
+## Original version utilities (repo root)
+
+These predate the tag-diff stack and remain unchanged in behavior:
+
+- **`fetch_version.py`** — fetch StackGen environment `version.json` (interactive or CLI).
+- **`compare_versions.py`** — compare deployed versions vs repo `.env` via GitHub.
+
+Examples:
+
 ```bash
 python fetch_version.py
-```
-
-This will display a menu to select from predefined environments:
-```
-Available environments:
-------------------------------
-1. Production (cloud)
-2. Staging (stage.dev)  
-3. Development (main.dev)
-4. Demo (demo.cloud)
-------------------------------
-Select environment [1-4]: 
-```
-
-### Command-line Mode
-```bash
-python fetch_version.py <env_name>
-```
-
-### Examples
-```bash
-# Interactive selection
-python fetch_version.py
-
-# Direct command-line usage
 python fetch_version.py cloud
-python fetch_version.py stage.dev
-python fetch_version.py main.dev
 
-# Force interactive mode even with argument
-python fetch_version.py -i
-
-# Verbose mode
-python fetch_version.py -v cloud
-python fetch_version.py -v  # Interactive with verbose
-```
-
-## Version Comparator Usage
-
-### Basic Usage
-```bash
 python compare_versions.py owner/repo
 ```
 
-### Full Example
-```bash
-python compare_versions.py myorg/myproject -e .env -b main -s cloud
+---
+
+## GitHub Actions
+
+Workflow **Monthly release (tag diff)** (`.github/workflows/tags-diff-release.yml`):
+
+- Manual dispatch: `stackgen_candidate_tag` (required); optional `version_json_url` to override production `version.json`
+- Runs `python run_monthly_release.py "<tag>" --skip-ticket` (plus `--version-json-url` when set)
+- Uploads artifact `monthly-release-generated-files` from `generated_files/`
+
+Set repository secret **GITHUB_PAT** for GitHub API; optional **LINEAR_API_KEY** for richer JSON.
+
+---
+
+## Package layout
+
+```
+release_pipeline/   # Orchestration: steps, pipeline, config, constants
+run_monthly_release.py
+create_monthly_release_ticket.py
+generate_input_json.py
+process_all_repos.py
+compare_tags.py
+…
+Makefile
+env.template
 ```
 
-### Interactive Environment Selection
-```bash
-python compare_versions.py owner/repo
-# Will prompt for StackGen environment selection
-```
+---
 
-### Examples
-```bash
-# Compare with default settings (.env file, main branch)
-python compare_versions.py myorg/project
+## Security
 
-# Specify custom .env file path
-python compare_versions.py myorg/project -e config/.env.production
-
-# Use specific branch and environment
-python compare_versions.py myorg/project -b develop -s stage.dev
-
-# Verbose output for debugging
-python compare_versions.py myorg/project -v
-
-# Force specific StackGen environment
-python compare_versions.py myorg/project -s cloud
-```
-
-## Version Fetcher Options
-
-- `env_name`: Optional. The environment name to use in the URL. If not provided, interactive selection will be used.
-- `-i, --interactive`: Force interactive environment selection even if env_name is provided
-- `-v, --verbose`: Enable verbose output
-- `-h, --help`: Show help message
-
-## Version Comparator Options
-
-- `repo`: Required. GitHub repository in format 'owner/repo'
-- `-e, --env-file`: Path to .env file in repository (default: .env)
-- `-b, --branch`: Branch to fetch .env file from (default: main)
-- `-s, --stackgen-env`: StackGen environment name. If not provided, interactive selection is used.
-- `-v, --verbose`: Enable verbose output
-- `-h, --help`: Show help message
-
-## Predefined Environments
-
-The utilities include these predefined StackGen environments:
-- **Production** (`cloud`)
-- **Staging** (`stage.dev`)
-- **Development** (`main.dev`)
-- **Demo** (`demo.cloud`)
-
-When using command-line mode with a custom environment name not in this list, the utility will ask for confirmation before proceeding.
-
-## Environment Variables
-
-### GitHub Authentication
-- `GITHUB_PAT`: GitHub Personal Access Token (preferred)
-- `GH_TOKEN`: Alternative GitHub token environment variable
-
-## Version Comparison Features
-
-### Supported .env Patterns
-The comparator recognizes these version patterns in .env files:
-- `SERVICE_VERSION=1.2.3`
-- `VERSION_SERVICE=1.2.3`
-- `SERVICE_TAG=v1.2.3`
-- `IMAGE_SERVICE=repo:tag` (extracts tag as version)
-
-### JSON Parsing
-The comparator can handle various JSON structures from version endpoints:
-- Direct key-value mappings
-- Nested objects with version fields
-- Complex nested structures
-
-### Output Examples
-
-**No Differences:**
-```
-============================================================
-COMPARISON RESULTS
-============================================================
-✅ There is no difference in the deployed versions and latest version
-============================================================
-```
-
-**With Differences:**
-```
-============================================================
-COMPARISON RESULTS
-============================================================
-⚠️  VERSION DIFFERENCES DETECTED:
-
-🔄 API:
-   Deployed: v1.2.3
-   Repository: v1.2.4
-
-🔄 WEB:
-   Deployed: v2.1.0
-   Repository: v2.1.1
-============================================================
-```
-
-## Error Handling
-
-Both utilities include comprehensive error handling for:
-- Network connectivity issues
-- HTTP errors (404, 500, etc.)
-- Request timeouts (30-second timeout)
-- Invalid URLs
-- GitHub API authentication errors
-- JSON parsing errors
-- Missing environment variables
-
-## Security Notes
-
-- GitHub PAT tokens should have appropriate repository read permissions
-- Tokens are read from environment variables for security
-- API calls include proper authentication headers
-- Sensitive information is not logged in non-verbose mode 
+- Tokens only via environment variables or CI secrets—never commit `.env`.
+- GitHub PAT should have read access to repos you compare.

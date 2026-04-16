@@ -8,7 +8,7 @@ an input.json file with current and new tag combinations.
 
 Usage:
     python generate_input_json.py
-    python generate_input_json.py --version-url https://stage.dev.stackgen.com/version.json
+    python generate_input_json.py --version-url https://cloud.stackgen.com/version.json
     python generate_input_json.py --env-url https://raw.githubusercontent.com/appcd-dev/appcd-dist/main/.env
 """
 
@@ -421,11 +421,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Generate with default URLs
-  python generate_input_json.py
+  # Generate with default production version.json (override --version-url if needed)
+  python generate_input_json.py --env-url ...
   
-  # Custom version.json URL
-  python generate_input_json.py --version-url https://prod.example.com/version.json
+  # Non-production deployed versions
+  python generate_input_json.py --version-url https://stage.dev.stackgen.com/version.json --env-url ...
   
   # Use local .env file
   python generate_input_json.py --env-file .env
@@ -437,8 +437,8 @@ Examples:
     
     parser.add_argument(
         "--version-url",
-        default="https://stage.dev.stackgen.com/version.json",
-        help="URL to fetch current version.json from (default: stage.dev.stackgen.com)"
+        default="https://cloud.stackgen.com/version.json",
+        help="URL for deployed version.json (default: production cloud.stackgen.com)",
     )
     parser.add_argument(
         "--env-url",
@@ -503,10 +503,12 @@ Examples:
     
     # Fetch new versions from .env file (local or URL)
     new_versions = None
-    
+    new_tags_source = ""
+
     if args.env_file:
         print(f"\n📥 Reading new versions from local file: {args.env_file}")
         new_versions = read_local_env_file(args.env_file)
+        new_tags_source = args.env_file
     else:
         # Convert GitHub blob URL to raw URL if needed
         env_url = convert_github_blob_to_raw_url(args.env_url)
@@ -572,7 +574,8 @@ Examples:
                 sys.exit(1)
         
         new_versions = parse_env_file(content)
-    
+        new_tags_source = env_url
+
     if new_versions is None:
         sys.exit(1)
     
@@ -630,10 +633,23 @@ Examples:
         
         print(f"✅ Successfully wrote {len(input_data)} service mappings to: {output_path}")
         
-        # Display summary
+        # Display summary (sources match how current_tag / new_tag were loaded above)
+        summary_header = "Summary"
+        summary_sources = (
+            f"  Current tags ← deployed version.json: {args.version_url}\n"
+            f"  New tags ← candidate .env:            {new_tags_source}"
+        )
+        if args.stackgen_tag:
+            summary_sources += (
+                f"\n  appcd current_tag: overridden from appcd-dev/appcd-dist "
+                f"tag {args.stackgen_tag} (.env APPCD_VERSION) when applicable"
+            )
         print("\n" + "=" * 70)
-        print("Summary:")
+        print(summary_header)
+        print(summary_sources)
         print("=" * 70)
+        print(f"{'Service':<25} {'Current tag':<22} →  {'New tag'}")
+        print("-" * 70)
         for item in input_data:
             status = "🔄" if item["current_tag"] != item["new_tag"] else "✓"
             print(f"{status} {item['service']:25} {item['current_tag']:20} → {item['new_tag']}")

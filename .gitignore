@@ -1,3 +1,19 @@
-__pycache__/compare_versions.cpython-311.pyc
-__pycache__/fetch_version.cpython-311.pyc
-__pycache__/service_mapping.cpython-311.pyc
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Local secrets / env
+.env
+.env.*
+!.env.example
+
+# Generated tag-diff outputs (regenerate with make or run_monthly_release.py)
+generated_files/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

@@ -76,7 +76,7 @@ class LinearTicketExtractor:
                 cmd,
                 capture_output=True,
                 text=True,
-                cwd=Path(__file__).parent  # Run from tags-diff directory
+                cwd=Path(__file__).resolve().parent
             )
             
             if result.returncode != 0:

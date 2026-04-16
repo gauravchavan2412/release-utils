@@ -8,7 +8,7 @@ It can handle both JSON and plain text responses with proper formatting.
 Usage:
     python fetch_version_json.py
     python fetch_version_json.py --url https://example.com/version.json
-    python fetch_version_json.py --url https://stage.dev.stackgen.com/version.json --pretty
+    python fetch_version_json.py --url https://cloud.stackgen.com/version.json --pretty
 """
 
 import argparse
@@ -110,8 +110,8 @@ Examples:
     
     parser.add_argument(
         "--url", "-u",
-        default="https://stage.dev.stackgen.com/version.json",
-        help="URL to fetch content from (default: https://stage.dev.stackgen.com/version.json)"
+        default="https://cloud.stackgen.com/version.json",
+        help="URL to fetch content from (default: production cloud.stackgen.com)",
     )
     parser.add_argument(
         "--pretty", "-p",
